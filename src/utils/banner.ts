@@ -1,6 +1,6 @@
 /**
  *  ████  Banner Utility
- * ████   Version: 1.0.0
+ * ████   Version: 1.0.1
  *  ████  Author: Benjamin Pequet
  * ████   Github: https://github.com/pequet
  *
@@ -9,6 +9,14 @@
  *
  * @license
  * These files are provided for educational purposes only. Collaboration is welcome.
+ *
+ * @changelog
+ * 1.0.0 
+ * - Initial release
+ * 1.0.1 
+ * - Added `trimLogo` function for handling ASCII art indentation
+ * - Fixed TypeScript type safety in `hslToRgb` conversion function
+ * - Added proper type annotations throughout the file
  *
  * @notes
  * This script is part of a meta project aimed at creating unique and adaptable ASCII banners for any programming language.
@@ -22,6 +30,15 @@
 //   ├─
 //   └─
 // `;
+
+interface BannerOptions {
+    logoColor?: string;
+    textColor?: string;
+    spacing?: number;
+    inlineMeta?: boolean;
+    excludeKeys?: string[];
+    hideKeys?: string[];
+}
 
 /**
  * Renders a visually aligned banner with a logo and metadata.
@@ -45,15 +62,16 @@
  * console.log(renderBanner(LOGO_STR, meta, { logoColor: "\x1b[31m", inlineMeta: true }));
  */
 export function renderBanner(
-    logo,
-    meta,
+    logo: string,
+    meta: Record<string, string | number>,
     { 
         logoColor = "\x1b[0m", 
         textColor = "\x1b[0m", 
         spacing = 2, 
         inlineMeta = false, 
-        excludeKeys = [] 
-    } = {}
+        excludeKeys = [],
+        hideKeys = []  
+    }: BannerOptions = {}
 ) {
     const logoLines = logo
         .split("\n") // Split the logo into lines
@@ -64,11 +82,12 @@ export function renderBanner(
     ); // Find the longest meta key (only for non-excluded keys)
     const paddingLength = maxKeyWidth + spacing;
 
-    // Normalize excludeKeys to lowercase for consistent comparison
+    // Normalize excludeKeys and hideKeys to lowercase for consistent comparison
     const excludeSet = new Set(excludeKeys.map(key => key.toLowerCase()));
+    const hideSet = new Set(hideKeys.map(key => key.toLowerCase()));
 
-    // Extract meta as [key, value] pairs
-    const metaEntries = Object.entries(meta);
+    // Extract meta as [key, value] pairs, filtering out hidden entries
+    const metaEntries = Object.entries(meta).filter(([key]) => !hideSet.has(key.toLowerCase()));
 
     // Determine the maximum number of rows to output
     const maxRows = Math.max(logoLines.length, metaEntries.length);
@@ -85,7 +104,7 @@ export function renderBanner(
             const keyLabel = isExcluded ? "" : `${key.charAt(0).toUpperCase() + key.slice(1)}:`;
             // const keyAndValue = `${keyLabel.padEnd(paddingLength)} ${value}`; // Maintain spacing even when excluding
             const keyAndValue = isExcluded 
-            ? `${value}`.padStart(paddingLength) // Skip key label and its padding, align value with other keys
+            ? `${value}` // Skip key label and its padding, align value with other keys
             : inlineMeta ? `${keyLabel} ${value}`
             : `${keyLabel.padEnd(paddingLength)} ${value}`;
 
@@ -105,6 +124,51 @@ export function renderBanner(
 }
 
 /**
+ * Processes multiline ASCII art logos to maintain their visual structure while removing unnecessary indentation.
+ * 
+ * This function allows ASCII art logos to be written naturally in code with indentation that matches
+ * the surrounding code style, while ensuring the logo itself is properly aligned when displayed.
+ * It preserves the relative spacing between characters that makes up the logo's visual structure,
+ * but removes the common leading indentation that comes from writing the logo in indented code.
+ * 
+ * The function handles both tabs and spaces, converting all tabs to 4 spaces to ensure consistent
+ * alignment across different editors and display contexts.
+ * 
+ * @param logo - The multiline string containing the ASCII art logo with its code-level indentation
+ * @returns The logo with minimal necessary indentation, preserving its visual structure
+ * 
+ * @example
+ * const logo = `
+ *               ▚ ▗▘
+ *              ▗▛█▛▙
+ *              ▛███▛▌
+ *              ▘▚▖▄▘▘
+ * `;
+ * console.log(trimLogo(logo));
+ * // Outputs:
+ * //  ▚ ▗▘
+ * // ▗▛█▛▙
+ * // ▛███▛▌
+ * // ▘▚▖▄▘▘
+ */
+export function trimLogo(logo: string): string {
+    // Step 1: Replace all tabs with 4 spaces - simple as fuck
+    const allSpaces = logo.replace(/\t/g, '    ');
+    
+    // Step 2: Split into lines and find the leftmost character position
+    const lines = allSpaces.split('\n');
+    const minSpaces = Math.min(...lines
+        .filter(line => line.trim())
+        .map(line => {
+            const match = line.match(/^ */);
+            return match ? match[0].length : 0;
+        }));
+    
+    // Step 3: Remove exactly that many spaces from EVERY line
+    return lines.map(line => line.slice(minSpaces)).join('\n');
+}
+
+/**
  * Retrieves a terminal-compatible ANSI escape code for a color in the HSL color space.
  * Converts HSL to RGB and returns the ANSI escape sequence for the color.
  * @param {number} index - Zero-based index of the desired color in the palette.
@@ -116,7 +180,12 @@ export function renderBanner(
  *   const logoColor = getAnsiColorFromPalette(3, 6);
  *   console.log(`${logoColor}This is cyan text\x1b[0m`); // Resets afterward
  */
-export function getAnsiColorFromPalette(index, count, saturation = 70, lightness = 50) {
+export function getAnsiColorFromPalette(
+    index: number, 
+    count: number, 
+    saturation: number = 70, 
+    lightness: number = 50
+): string {
     if (index < 0 || index >= count) {
         throw new Error(`Invalid index ${index}. Must be between 0 and ${count - 1}.`);
     }
@@ -124,12 +193,12 @@ export function getAnsiColorFromPalette(index, count, saturation = 70, lightness
     const hue = Math.round(index * step); // Calculate the hue for the given index
 
     // Convert HSL to RGB
-    function hslToRgb(h, s, l) {
+    function hslToRgb(h: number, s: number, l: number) {
         s /= 100;
         l /= 100;
-        const k = (n) => (n + h / 30) % 12;
+        const k = (n: number): number => (n + h / 30) % 12;
         const a = s * Math.min(l, 1 - l);
-        const f = (n) =>
+        const f = (n: number): number =>
             l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
         return [
             Math.round(f(0) * 255),
@@ -142,4 +211,4 @@ export function getAnsiColorFromPalette(index, count, saturation = 70, lightness
 
     // Return the ANSI escape code for the RGB color
     return `\x1b[38;2;${r};${g};${b}m`;
-}
+} 
